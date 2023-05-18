@@ -1,0 +1,20 @@
+{
+  "metrla": {
+    "data_dir": "/home/yus516/data/code/explainable-graph/MTGNN/data/METR-LA",
+    "num_nodes": 207,
+    "num_slots": 288,
+    "normalization": "batch"
+  },
+  "metrlaweekdayweekend": {
+    "data_dir": "traffic_data/metr-la-weekday-weekend",
+    "num_nodes": 207,
+    "num_slots": 288,
+    "normalization": "batch"
+  },
+  "metrlaweekdayweekendcopy": {
+    "data_dir": "data/metr-la-weekday-weekendcopy",
+    "num_nodes": 207,
+    "num_slots": 288,
+    "normalization": "batch"
+  }
+}

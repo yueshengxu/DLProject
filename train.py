@@ -1,4 +1,3 @@
-from pickletools import stringnl_noescape
 import torch
 import numpy as np
 import argparse
@@ -12,7 +11,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 def main(args):
     device = torch.device(args.device)
-    config = json.load(open("data/config.json", "r"))[args.data]
+    config = json.load(open("traffic_data/config.json", "r"))[args.data]
     args.days = config["num_slots"]  # number of timeslots in a day which depends on the dataset
     args.num_nodes = config["num_nodes"]  # number of nodes
     args.normalization = config["normalization"]  # method of normalization which depends on the dataset
@@ -39,46 +38,34 @@ def main(args):
     count = 0
 
     if (args.filter > 0 and keep_order):
-        print(dataloader['train_loader'].size)
         print("from", args.start_point*12, "to", args.start_point*12 + 12*args.lastinghours)
         dataloader['train_loader'].filter_by_slice(args.start_point*12, args.start_point*12 + 12*args.lastinghours)
         dataloader['val_loader'].filter_by_slice(args.start_point*12, args.start_point*12 + 12*args.lastinghours)
         dataloader['test_loader'].filter_by_slice(args.start_point*12, args.start_point*12 + 12*args.lastinghours)
-        # dataloader['y_test'].filter_by_slice(args.start_point*12, args.start_point*12 + 12*args.lastinghours)
-    print(dataloader['train_loader'].size)
-    print(dataloader['val_loader'].size)
-    print(dataloader['test_loader'].size)
+
 
     for i in range(start_epoch, args.epochs + 1):
         # train
         train_loss = []
-        train_mape = []
-        train_rmse = []
         tt1 = time.time()
 
         dataloader['train_loader'].shuffle()
         for itera, (x, y, ind) in enumerate(dataloader['train_loader'].get_iterator()):
-            
             trainx = torch.Tensor(x).to(device)
             trainx = trainx.transpose(1, 3)
             trainy = torch.Tensor(y).to(device)
             trainy = trainy.transpose(1, 3)
-            print(trainx.shape)
-            metrics = engine.train(trainx, trainy[:, 0, :, :], ind)
-            train_loss.append(metrics[0])
-            train_mape.append(metrics[1])
-            train_rmse.append(metrics[2])
+            metric = engine.train(trainx, trainy[:, 0, :, :], ind)
+            train_loss.append(metric)
             if itera % args.print_every == 0:
-                log = 'Iter: {:03d}, Train Loss: {:.4f}, Train MAPE: {:.4f}, Train RMSE: {:.4f}'
-                print(log.format(itera, train_loss[-1], train_mape[-1], train_rmse[-1]), flush=True)
-            # if itera >= training_size:
-            #     break
+                log = 'Iter: {:03d}, Train Loss: {:.4f}'
+                print(log.format(itera, train_loss[-1]), flush=True)
+
         tt2 = time.time()
         train_time.append(tt2 - tt1)
         # validate
         valid_loss = []
-        valid_mape = []
-        valid_rmse = []
+
 
         s1 = time.time()
         for itera, (x, y, ind) in enumerate(dataloader['val_loader'].get_iterator()):
@@ -87,20 +74,13 @@ def main(args):
             testy = torch.Tensor(y).to(device)
             testy = testy.transpose(1, 3)
             metrics = engine.eval(testx, testy[:, 0, :, :], ind)
-            valid_loss.append(metrics[0])
-            valid_mape.append(metrics[1])
-            valid_rmse.append(metrics[2])
+            valid_loss.append(metrics)
         s2 = time.time()
         log = 'Epoch: {:03d}, Inference Time: {:.4f} secs'
         print(log.format(i, (s2 - s1)))
         val_time.append(s2 - s1)
         mtrain_loss = np.mean(train_loss)
-        mtrain_mape = np.mean(train_mape)
-        mtrain_rmse = np.mean(train_rmse)
-
         mvalid_loss = np.mean(valid_loss)
-        mvalid_mape = np.mean(valid_mape)
-        mvalid_rmse = np.mean(valid_rmse)
 
         # early stopping
         if len(his_loss) > 0 and mvalid_loss < np.min(his_loss):
@@ -110,9 +90,9 @@ def main(args):
             print(f"no improve for {count} epochs")
         his_loss.append(mvalid_loss)
 
-        log = 'Epoch: {:03d}, Train MAE: {:.4f}, Train MAPE: {:.4f}, Train RMSE: {:.4f},' \
-              ' Valid MAE: {:.4f}, Valid MAPE: {:.4f}, Valid RMSE: {:.4f}, Training Time: {:.4f}/epoch'
-        print(log.format(i, mtrain_loss, mtrain_mape, mtrain_rmse, mvalid_loss, mvalid_mape, mvalid_rmse, (tt2 - tt1)),
+        log = 'Epoch: {:03d}, Train MAE: {:.4f},' \
+              ' Valid MAE: {:.4f}, Training Time: {:.4f}/epoch'
+        print(log.format(i, mtrain_loss, mvalid_loss, (tt2 - tt1)),
               flush=True)
         torch.save(engine.model.state_dict(),
                    os.path.join(args.save, "epoch_" + str(i) + "_" + str(round(float(mvalid_loss), 2)) + "stgcn-weekday" + time_period + file_name + ".pth"))
@@ -166,12 +146,8 @@ def main(args):
         os.path.join(args.save, "epoch_" + str(bestid + start_epoch)
                      + "_" + str(round(float(his_loss[int(bestid)]), 2)) + "stgcn-weekday" + time_period + file_name + ".pth")))
 
-    # engine.model.load_state_dict(torch.load(
-    #     os.path.join("save_models/metrlacopy", "exp0_best_3.24reaction-diffusion-nature.pth")))
-
     outputs = []
     testx_mask = []
-    # realy = torch.Tensor(dataloader['y_test']).to(device)
     realy = torch.Tensor(dataloader['test_loader'].ys).to(device)
     realy = realy.transpose(1, 3)[:, 0, :, :]
 
@@ -179,9 +155,6 @@ def main(args):
         testx = torch.Tensor(x).to(device)
         testx = testx.transpose(1, 3)
         with torch.no_grad():
-
-            # preds = engine.model(testx, ind)[:, None, :, :]
-            # preds = preds.transpose(1, 3)
 
             x_mask = (testx[:, :, :, -1][:, :, :, None] >= zero_)
             x_mask = x_mask.float()
@@ -194,7 +167,7 @@ def main(args):
             output = output.transpose(2, 3)
             preds = output
 
-            # preds = preds.transpose(1, 3)
+
         outputs.append(preds.squeeze())
         testx_mask.append(x_mask)
 
@@ -209,8 +182,7 @@ def main(args):
     print("The valid loss on best model is", str(round(float(his_loss[int(bestid)]), 4)))
 
     amae = []
-    amape = []
-    armse = []
+
     i = args.predict_point
     pred = scaler.inverse_transform(yhat)[:, :, None]
     real = realy[:pred.shape[0], :, i][:, :, None]
@@ -220,18 +192,17 @@ def main(args):
     
     metrics = util.metric_strength(pred, real, testx_mask)
     log = 'Evaluate best model on test data for horizon {:d},' \
-            ' Test MAE: {:.4f}, Test MAPE: {:.4f}, Test RMSE: {:.4f}'
-    print(log.format(i, metrics[0], metrics[1], metrics[2]))
+            ' Test MAE: {:.4f}'
+    print(log.format(i, metrics[0]))
     amae.append(metrics[0])
-    amape.append(metrics[1])
-    armse.append(metrics[2])
 
-    log = 'On average over' + file_name + ', Test MAE: {:.4f}, Test MAPE: {:.4f}, Test RMSE: {:.4f}'
-    print(log.format(np.mean(amae), np.mean(amape), np.mean(armse)))
+
+    log = 'On average over' + file_name + ', Test MAE: {:.4f}'
+    print(log.format(np.mean(amae)))
     torch.save(engine.model.state_dict(),
                os.path.join(args.save, "exp" + str(args.expid) +
                             "_best_" + str(round(float(his_loss[int(bestid)]), 2)) + "stgcn" + time_period + file_name + ".pth"))
-    return np.asarray(amae), np.asarray(amape), np.asarray(armse)
+    return np.asarray(amae)
 
 
 
@@ -259,8 +230,6 @@ if __name__ == "__main__":
     parser.add_argument('--order', type=int, default=2, help='order of graph convolution')
     parser.add_argument('--resolution', type=int, default=288, help='resolution')
     parser.add_argument('--predict_point', type=int, default=0, help='order of graph convolution')
-
-    # time.sleep(3 * 60 * 60)
 
     args = parser.parse_args()
     args.save = os.path.join('save_models/', os.path.basename(args.data) + args.iden)

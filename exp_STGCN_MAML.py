@@ -36,17 +36,9 @@ def plot_mae(filename):
         plt.show()
 
 def get_dataset_name(dataset_name):
-    if dataset_name == "pemsbayweekdayweekend":
-        sub_folder = "pems_bay_200"
-        data_set_name = "pems_bay"
-
-    elif dataset_name == "metrlaweekdayweekend":
+    if dataset_name == "metrlaweekdayweekend":
         sub_folder = "metr_la_200"
         data_set_name = "metr_la"
-
-    elif dataset_name == "seattle-loop-weekday":
-        sub_folder = "seattle_200"
-        data_set_name = "seattle"
 
     else:
         print("Error: Dataset {} does not exist".format(dataset_name))
@@ -77,18 +69,13 @@ def STGCN_model(args):
     elif Ko > 0:
         blocks.append([128, 128])
     blocks.append([1])
-    #Pems-bay 281, metr-la 207, seattle 323
-    if args.data == "pemsbayweekdayweekend":
-        n_vertex = 281
-        adj_mat_file ="traffic_data/pems-bay/adj_pems_bay.csv"
 
-    elif args.data == "metrlaweekdayweekend":
+
+
+    if args.data == "metrlaweekdayweekend":
         n_vertex = 207
         adj_mat_file = "traffic_data/metr-la/adj_mat.csv"
-
-    elif args.data == "seattle-loop-weekday":
-        n_vertex = 323
-        adj_mat_file = "traffic_data/seattle/adj_seattle.csv"
+        
     else:
         print("Error: Dataset {} does not exist".format(args.data))
 
@@ -184,22 +171,16 @@ class STGCN_MAML():
             testx = torch.Tensor(x).to(self.device)
             testx = testx.transpose(1, 3)
             with torch.no_grad():
-
-                # preds = engine.model(testx, ind)[:, None, :, :]
-                # preds = preds.transpose(1, 3)
-
                 x_mask = (testx[:, :, :, -1][:, :, :, None] >= -3)
                 x_mask = x_mask.float()
                 x_mask /= torch.mean((x_mask))
                 x_mask = torch.where(torch.isnan(x_mask), torch.zeros_like(x_mask), x_mask)  
 
-                # let it diffuse 12 times
                 testx = testx.transpose(2, 3)
                 output = learner(testx)
                 output = output.transpose(2, 3)
                 preds = output
 
-                # preds = preds.transpose(1, 3)
             outputs.append(preds.squeeze())
             testx_mask.append(x_mask)
 
@@ -287,18 +268,16 @@ class STGCN_MAML():
 
             opt.step()
             
-        self.save_MAML_model(maml, train_save_path, save_file_name)
+        # self.save_MAML_model(maml, train_save_path, save_file_name)
         return err_list
 
     def train_test(self, load_path):
         dataloader = self.load_data()    
         scaler = dataloader['scaler']
-
-
+        
         maml = l2l.algorithms.MAML(self.model, lr=self.args.maml_learning_rate, first_order=False)
         maml.load_state_dict(torch.load(load_path))
 
-        # opt = torch.optim.SGD(maml.parameters(), lr=args.learning_rate)
         opt = torch.optim.Adam(maml.parameters(), lr=self.args.learning_rate)
         err_list = []
         for i in range(200):
@@ -399,11 +378,8 @@ if __name__ == "__main__":
     parser.add_argument('--predict_point', type=int, default=0, help='predict point')
     parser.add_argument('--start_point', type=int, default=16, help='start_point')
 
-    parser.add_argument('--device', type=str, default='cuda:0', help='')
-
-    parser.add_argument('--data', type=str, default='pemsbayweekdayweekend', help='data path')
-    # parser.add_argument('--data', type=str, default='metrlaweekdayweekend', help='data path')
-    # parser.add_argument('--data', type=str, default='seattle-loop-weekday', help='data path')
+    parser.add_argument('--device', type=str, default='cuda:0', help='') 
+    parser.add_argument('--data', type=str, default='metrlaweekdayweekend', help='data path')
     parser.add_argument('--retrain', type=bool, default=False, help='')
 
     parser.add_argument('--seq_length', type=int, default=1, help='output length')
@@ -443,25 +419,11 @@ if __name__ == "__main__":
         Is_train = False
         Is_Test = False
 
-    # Is_plot = True
-    
-    ####Transfer MAML weights#########
-    # model = STGCN_model(args=args)
-    # maml = l2l.algorithms.MAML(model, lr=args.maml_learning_rate, first_order=False)
-    # maml.load_state_dict(torch.load("saved_maml_model/noshuffle200/maml_params_start0.pth"))
-    # #Copy MAML initial params to STGCN
-    # for k, v in maml.state_dict().items():
-    #     model.state_dict()[k[7:]] = v
-
-    # for k, v in model.state_dict().items():
-    #     print(k)
-    # os.makedirs("saved_maml_model/noshuffle200", exist_ok=True)
-    # torch.save(model.state_dict(), os.path.join("saved_maml_model/noshuffle200", "stgcn_params_start0.pth"))
-
     data_set_dir, data_set_name = get_dataset_name(args.data)
-    args.resume = False
-    day_slice = "-24to-12"
+    args.resume = True
+    day_slice = "-12to-0"
     folder = "save_models/{0}/{1}".format(day_slice, data_set_dir)
+
     print("Data: ", args.data)
 
     if not Is_plot:
@@ -490,20 +452,17 @@ if __name__ == "__main__":
                     print("TEST using MAML init params")
                 
                 # test_load_path = "saved_maml_model/metr_la_200/"+ file_name
-                # test_load_path = "saved_maml_model/pems_bay_200/"+ file_name
-                # test_load_path = "saved_maml_model/seattle_200/"+ file_name
+
 
                 test_load_path = "{}/{}".format(folder, file_name)
                 if args.retrain:
                     mae, mape, rmse = mata_learner.train_test(load_path=test_load_path)
                 else:
                     mae, mape, rmse = mata_learner.test(load_path= test_load_path)
-                # print(np.mean(mae))
+
                 mae_list.append(mae)
 
 
-
-        # valid_loss_list.append(valid_loss)
     else:
         print("Error!!!!!!!!!!!!")
 
@@ -512,29 +471,11 @@ if __name__ == "__main__":
             csv_file = "{0}{1}.csv".format(data_set_name,"_train200")
         else:
             csv_file = "{0}{1}.csv".format(data_set_name,"")
-        # csv_file = "{0}{1}.csv".format("metr_la","_train200")
-        # csv_file = "{0}{1}.csv".format("metr_la","")
-
-        # csv_file = "{0}{1}.csv".format("pems_bay","_train200")
-        # csv_file = "{0}{1}.csv".format("pems_bay","")
-
-        # csv_file = "{0}{1}.csv".format("seattle","_train200")
-        # csv_file = "{0}{1}.csv".format("seattle","")
-
         df = pd.DataFrame(mae_list) 
         df.to_csv("{0}/{1}".format(folder, csv_file), index=False)
-
 
 
     
 
 
 
-
-    # if not valid_loss:
-    #     valid_loss = -1
-    # optimizer = "Adam"
-    # with open(f'./log.csv', 'a+') as log_file:
-    #     csv_writer = csv.writer(log_file, delimiter=',')
-    #     csv_writer.writerow([args.epochs, optimizer, args.maml_learning_rate, args.learning_rate, 
-    #     args.train_batch_size, args.test_batch_size, mae, mape, rmse, valid_loss, args.train_support, args.test_support])
